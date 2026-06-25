@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:circle_app/models/event_model.dart';
 import 'package:circle_app/repositories/event_repository.dart';
 import 'package:circle_app/models/comment_model.dart';
+import 'package:circle_app/models/user_model.dart'; // 💡 AGREGA ESTA LÍNEA
 
 class EventProvider extends ChangeNotifier {
   final EventRepository _eventRepository = EventRepository();
@@ -18,6 +19,25 @@ class EventProvider extends ChangeNotifier {
   List<Map<String, dynamic>> get interests => _interests;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
+
+  List<UserModel> _currentParticipants = [];
+  List<UserModel> get currentParticipants => _currentParticipants;
+
+  bool _isLoadingParticipants = false;
+  bool get isLoadingParticipants => _isLoadingParticipants;
+
+  Future<void> loadEventParticipants(String eventId) async {
+  _isLoadingParticipants = true;
+  notifyListeners();
+  try {
+    _currentParticipants = await _eventRepository.getParticipants(eventId);
+  } catch (e) {
+    print('Error al cargar participantes en el provider: $e');
+  } finally {
+    _isLoadingParticipants = false;
+    notifyListeners();
+  }
+}
 
   // MODIFICADO: Ahora solicita el ID de usuario para personalizar el resultado
   Future<void> loadEvents(String currentUserId) async {

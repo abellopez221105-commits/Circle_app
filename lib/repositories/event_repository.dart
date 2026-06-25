@@ -2,6 +2,7 @@
 import 'package:circle_app/models/event_model.dart';
 import 'package:circle_app/services/event_service.dart';
 import 'package:circle_app/models/comment_model.dart';
+import 'package:circle_app/models/user_model.dart'; // 💡 AGREGA ESTA LÍNEA
 
 class EventRepository {
   final EventService _eventService = EventService();
@@ -43,4 +44,29 @@ class EventRepository {
   Future<void> saveComment(String eventId, String userId, String message) async {
     await _eventService.insertComment(eventId, userId, message);
   }
+
+  Future<List<UserModel>> getParticipants(String eventId) async {
+  try {
+    final data = await _eventService.getEventParticipants(eventId);
+    
+    return data.map((item) {
+      final usersData = item['users'];
+      
+      if (usersData != null) {
+        if (usersData is Map<String, dynamic>) {
+          return UserModel.fromJson(usersData);
+        } else if (usersData is List && usersData.isNotEmpty) {
+          return UserModel.fromJson(usersData.first as Map<String, dynamic>);
+        }
+      }
+      return null;
+    })
+    .whereType<UserModel>() // Remueve cualquier mapeo nulo o fallido
+    .toList();
+    
+  } catch (e) {
+    print('Error mapeando participantes: $e');
+    return [];
+  }
+}
 }

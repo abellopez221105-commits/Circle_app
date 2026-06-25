@@ -62,4 +62,19 @@ class EventService {
       'message': message,
     });
   }
+
+  Future<List<Map<String, dynamic>>> getEventParticipants(String eventId) async {
+  try {
+    // 💡 OPTIMIZACIÓN: Traemos estrictamente los campos necesarios para el perfil público y estrellas
+    final response = await _supabase
+        .from('event_participants') 
+        .select('users (id, username, bio, avatar_url, stars, is_premium)')
+        .eq('event_id', eventId);
+    
+    return List<Map<String, dynamic>>.from(response);
+  } catch (e) {
+    throw Exception('Error optimizado en getEventParticipants: $e');
+  }
+}
+
 }

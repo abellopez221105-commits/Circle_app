@@ -2,8 +2,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:circle_app/models/event_model.dart';
+import 'package:circle_app/models/user_model.dart'; // 💡 Importación del nuevo UserModel
 import 'package:circle_app/providers/auth_provider.dart';
 import 'package:circle_app/providers/event_provider.dart';
+import 'package:circle_app/screens/public_profile_screen.dart'; // 💡 Importación de la pantalla de perfil público
 
 class EventDetailsScreen extends StatefulWidget {
   final EventModel event;
@@ -20,7 +22,10 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<EventProvider>().loadComments(widget.event.id);
+      final eventProvider = context.read<EventProvider>();
+      // Carga en paralelo tanto los comentarios como los participantes asignados al círculo
+      eventProvider.loadComments(widget.event.id);
+      eventProvider.loadEventParticipants(widget.event.id);
     });
   }
 
@@ -46,7 +51,10 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
             child: Card(
               color: Colors.grey[50],
               elevation: 0,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey[200]!)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(color: Colors.grey[200]!),
+              ),
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
@@ -66,6 +74,104 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
               ),
             ),
           ),
+          
+          // 🟢 Bloque Horizontal de Participantes del Evento
+          Consumer<EventProvider>(
+            builder: (context, provider, child) {
+              if (provider.isLoadingParticipants) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8.0),
+                  child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                );
+              }
+
+              if (provider.currentParticipants.isEmpty) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Aún no hay participantes en este círculo.',
+                      style: TextStyle(color: Colors.grey, fontSize: 13),
+                    ),
+                  ),
+                );
+              }
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+                    child: Text(
+                      'Participantes (${provider.currentParticipants.length})',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                    ),
+                  ),
+                  SizedBox(
+                    height: 80, // Altura incrementada para dar espacio al texto de abajo
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                      itemCount: provider.currentParticipants.length,
+                      itemBuilder: (context, index) {
+                        final participant = provider.currentParticipants[index];
+                        final displayName = participant.username ?? 'Usuario';
+                        final initial = displayName.substring(0, 1).toUpperCase();
+
+                        // Mostramos solo el primer nombre en la UI para que no se amontone
+                        final firstName = displayName.split(' ').first;
+
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                          child: Tooltip(
+                            message: displayName,
+                            child: InkWell(
+                              onTap: () {
+                                // 🚀 NAVEGAR AL PERFIL PÚBLICO pasándole el objeto optimizado
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => PublicProfileScreen(user: participant),
+                                  ),
+                                );
+                              },
+                              borderRadius: BorderRadius.circular(12),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  CircleAvatar(
+                                    radius: 22,
+                                    backgroundColor: const Color(0xFFE8EAF6),
+                                    child: Text(
+                                      initial,
+                                      style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF3F51B5), fontSize: 14),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4), // Separación entre el círculo y el texto
+                                  Text(
+                                    firstName,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.grey[700],
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis, // Si es muy largo añade "..."
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+
           const Divider(),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
@@ -77,6 +183,7 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
               ],
             ),
           ),
+          
           // Lista de comentarios
           Expanded(
             child: comments.isEmpty
@@ -110,10 +217,16 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
                     },
                   ),
           ),
+          
           // Caja de texto inferior fija para comentar
           Container(
             padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.grey.withValues(alpha: 0.2), blurRadius: 4, offset: const Offset(0, -2))]),
+            decoration: BoxDecoration(
+              color: Colors.white, 
+              boxShadow: [
+                BoxShadow(color: Colors.grey.withValues(alpha: 0.2), blurRadius: 4, offset: const Offset(0, -2))
+              ],
+            ),
             child: Row(
               children: [
                 Expanded(
