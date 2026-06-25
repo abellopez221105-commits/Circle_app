@@ -1,0 +1,46 @@
+// lib/repositories/event_repository.dart
+import 'package:circle_app/models/event_model.dart';
+import 'package:circle_app/services/event_service.dart';
+import 'package:circle_app/models/comment_model.dart';
+
+class EventRepository {
+  final EventService _eventService = EventService();
+
+  // MODIFICADO: Ahora requiere el currentUserId para mapear correctamente el estado
+  Future<List<EventModel>> getEvents(String currentUserId) async {
+    final data = await _eventService.fetchEvents();
+    return data.map((json) => EventModel.fromJson(json, currentUserId)).toList();
+  }
+
+  Future<List<Map<String, dynamic>>> getInterests() async {
+    final data = await _eventService.fetchInterests();
+    return List<Map<String, dynamic>>.from(data);
+  }
+
+  Future<void> saveEvent(Map<String, dynamic> eventData) async {
+    await _eventService.insertEvent(eventData);
+  }
+
+  // NUEVO: Llama al servicio correspondiente según la acción solicitada
+  Future<void> toggleParticipation(String eventId, String userId, bool isJoining) async {
+    if (isJoining) {
+      await _eventService.joinEvent(eventId, userId);
+    } else {
+      await _eventService.leaveEvent(eventId, userId);
+    }
+  }
+
+  Future<void> sendReport(String eventId, String reporterId, String reason) async {
+    await _eventService.reportEvent(eventId, reporterId, reason);
+  }
+
+  Future<List<CommentModel>> getComments(String eventId) async {
+    final data = await _eventService.fetchComments(eventId);
+    return data.map((json) => CommentModel.fromJson(json)).toList();
+  }
+
+  // NUEVO: Enlace para guardar comentarios
+  Future<void> saveComment(String eventId, String userId, String message) async {
+    await _eventService.insertComment(eventId, userId, message);
+  }
+}

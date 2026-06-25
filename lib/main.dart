@@ -1,8 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:provider/provider.dart';
+import 'package:circle_app/config/env.dart';
+import 'package:circle_app/providers/auth_provider.dart';
+import 'package:circle_app/providers/event_provider.dart';
+import 'package:circle_app/screens/login_screen.dart';
+import 'package:circle_app/screens/home_screen.dart';
 
-void main() {
-  // Aquí inicializaremos configuraciones futuras (como Supabase)
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Environment.initEnvironment();
+  await Supabase.initialize(
+    url: Environment.supabaseUrl,
+    publishableKey: Environment.supabaseAnonKey,
+  );
   runApp(const CircleApp());
 }
 
@@ -11,65 +22,34 @@ class CircleApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Circle',
-      debugShowCheckedModeBanner: false, // Oculta la etiqueta de "DEBUG"
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF3F51B5), // Nuestro Azul Índigo
-          primary: const Color(0xFF3F51B5),
-          secondary: const Color(0xFFFF9800), // Nuestro Naranja
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider(create: (_) => EventProvider()), // Inyectamos el nuevo módulo globalmente
+      ],
+      child: MaterialApp(
+        title: 'Circle',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFF3F51B5),
+            primary: const Color(0xFF3F51B5),
+            secondary: const Color(0xFFFF9800),
+          ),
+          useMaterial3: true,
         ),
-        useMaterial3: true,
+        home: const AuthGate(),
       ),
-      home: const InitialScreen(),
     );
   }
 }
 
-// Pantalla temporal para verificar que todo funciona
-class InitialScreen extends StatelessWidget {
-  const InitialScreen({super.key});
+class AuthGate extends StatelessWidget {
+  const AuthGate({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Circle: Conecta y Comparte', style: TextStyle(color: Colors.white)),
-        backgroundColor: Theme.of(context).colorScheme.primary,
-      ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.people_alt, size: 80, color: Color(0xFF3F51B5)),
-            const SizedBox(height: 20),
-            const Text(
-              'Bienvenido a Circle',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 10),
-            const Text(
-              'MVP en construcción...',
-              style: TextStyle(fontSize: 16, color: Colors.grey),
-            ),
-            const SizedBox(height: 30),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.secondary,
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () {
-                // Acción temporal
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Botón funcionando perfectamente')),
-                );
-              },
-              child: const Text('Unirse a un evento'),
-            )
-          ],
-        ),
-      ),
-    );
+    final authProvider = context.watch<AuthProvider>();
+    return authProvider.isAuthenticated ? const HomeScreen() : const LoginScreen();
   }
 }
