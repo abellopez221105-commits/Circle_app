@@ -13,7 +13,7 @@ class ExploreScreen extends StatefulWidget {
 }
 
 class _ExploreScreenState extends State<ExploreScreen> {
-  // NUEVO: Estados locales para controlar los filtros en tiempo real
+  // Estados locales para controlar los filtros en tiempo real
   String _searchQuery = '';
   dynamic _selectedInterestId; // null significa "Todos"
 
@@ -23,7 +23,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final userId = context.read<AuthProvider>().user?.id ?? '';
       context.read<EventProvider>().loadEvents(userId);
-      // NUEVO: Cargamos los intereses para pintar los chips de filtrado
       context.read<EventProvider>().loadInterests();
     });
   }
@@ -40,7 +39,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
       ),
       body: Column(
         children: [
-          // NUEVO: Componente visual del Buscador
+          // Componente visual del Buscador
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
             child: TextField(
@@ -61,7 +60,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
             ),
           ),
           
-          // NUEVO: Selector horizontal de Categorías (Intereses)
+          // Selector horizontal de Categorías (Intereses)
           _buildInterestsBar(eventProvider),
           
           const Divider(height: 1),
@@ -78,7 +77,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
     );
   }
 
-  // NUEVO: Generador de la barra horizontal de chips estilizables
+  // Generador de la barra horizontal de chips estilizables
   Widget _buildInterestsBar(EventProvider provider) {
     return SizedBox(
       height: 50,
@@ -124,61 +123,59 @@ class _ExploreScreenState extends State<ExploreScreen> {
   }
 
   Widget _buildBody(EventProvider provider, String userId) {
-  if (provider.isLoading) {
-    return const Center(child: CircularProgressIndicator());
-  }
-
-  if (provider.errorMessage != null) {
-    return Center(child: Text(provider.errorMessage!, style: const TextStyle(color: Colors.red)));
-  }
-
-  final blockedIds = context.watch<AuthProvider>().blockedUserIds;
-
-  final visibleEvents = provider.events.where((event) {
-    // 1. Filtro de Seguridad
-    final passesSecurity = !blockedIds.contains(event.creatorId) && event.creatorId != userId;
-    
-    bool passesInterest = true;
-    if (_selectedInterestId != null) {
-      final selectedInterestName = provider.interests.firstWhere(
-        // Usamos .toString() para comparar de forma segura sin importar si es int o String
-        (i) => i['id'].toString() == _selectedInterestId.toString(), 
-        orElse: () => {'name': ''},
-      )['name'];
-      
-      passesInterest = event.interestName.toLowerCase() == selectedInterestName.toString().toLowerCase();
+    if (provider.isLoading) {
+      return const Center(child: CircularProgressIndicator());
     }
 
-    // 3. OPTIMIZACIÓN DEL BUSCADOR: Ahora también busca si la palabra coincide con la categoría
-    final passesSearch = event.title.toLowerCase().contains(_searchQuery) || 
-                         event.description.toLowerCase().contains(_searchQuery) ||
-                         event.interestName.toLowerCase().contains(_searchQuery); // 👈 ¡ESTO ARREGLA LO DE 'CINE'!
+    if (provider.errorMessage != null) {
+      return Center(child: Text(provider.errorMessage!, style: const TextStyle(color: Colors.red)));
+    }
 
-    return passesSecurity && passesInterest && passesSearch;
-  }).toList();
+    final blockedIds = context.watch<AuthProvider>().blockedUserIds;
 
-  if (visibleEvents.isEmpty) {
-    return ListView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      children: const [
-        SizedBox(height: 100),
-        Icon(Icons.search_off, size: 64, color: Colors.grey),
-        SizedBox(height: 16),
-        Text(
-          'No encontramos encuentros que coincidan\ncon tus filtros actuales.',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: Colors.grey, height: 1.4),
-        ),
-      ],
-    );
-  }
+    final visibleEvents = provider.events.where((event) {
+      // 1. Filtro de Seguridad
+      final passesSecurity = !blockedIds.contains(event.creatorId) && event.creatorId != userId;
+      
+      // 2. Filtro de Intereses
+      bool passesInterest = true;
+      if (_selectedInterestId != null) {
+        final selectedInterestName = provider.interests.firstWhere(
+          (i) => i['id'].toString() == _selectedInterestId.toString(), 
+          orElse: () => {'name': ''},
+        )['name'];
+        
+        passesInterest = event.interestName.toLowerCase() == selectedInterestName.toString().toLowerCase();
+      }
 
-  // ... Aquí continúa tu ListView.builder normal que dibuja las tarjetas (Cards)
+      // 3. Optimización del Buscador
+      final passesSearch = event.title.toLowerCase().contains(_searchQuery) || 
+                           event.description.toLowerCase().contains(_searchQuery) ||
+                           event.interestName.toLowerCase().contains(_searchQuery);
+
+      return passesSecurity && passesInterest && passesSearch;
+    }).toList();
+
+    if (visibleEvents.isEmpty) {
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: const [
+          SizedBox(height: 100),
+          Icon(Icons.search_off, size: 64, color: Colors.grey),
+          SizedBox(height: 16),
+          Text(
+            'No encontramos encuentros que coincidan\ncon tus filtros actuales.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey, height: 1.4),
+          ),
+        ],
+      );
+    }
 
     return ListView.builder(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16),
-      itemCount: visibleEvents.length, // Renderiza según la lista final mutada
+      itemCount: visibleEvents.length,
       itemBuilder: (context, index) {
         final event = visibleEvents[index];
         return Card(
@@ -261,6 +258,8 @@ class _ExploreScreenState extends State<ExploreScreen> {
                     ],
                   ),
                   const Divider(height: 24),
+                  
+                  // SECCIÓN CORREGIDA: Control de aforo e inhabilitación desde la cartelera
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -269,25 +268,45 @@ class _ExploreScreenState extends State<ExploreScreen> {
                           const Icon(Icons.people, size: 20, color: Colors.grey),
                           const SizedBox(width: 6),
                           Text(
-                            '${event.participantCount} inscrito(s)',
-                            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
+                            '${event.participantCount} / ${event.maxParticipants} cupos',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: event.participantCount >= event.maxParticipants && !event.isParticipating
+                                  ? Colors.red
+                                  : Colors.grey,
+                            ),
                           ),
                         ],
                       ),
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: event.isParticipating ? Colors.grey[200] : const Color(0xFF3F51B5),
-                          foregroundColor: event.isParticipating ? Colors.red : Colors.white,
-                          elevation: event.isParticipating ? 0 : 2,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                        ),
-                        onPressed: () {
-                          provider.toggleEventParticipation(event.id, userId, event.isParticipating);
+                      Builder(
+                        builder: (context) {
+                          final bool isFull = event.participantCount >= event.maxParticipants;
+                          final bool canJoin = !isFull || event.isParticipating;
+
+                          return ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: !canJoin 
+                                  ? Colors.grey[300] 
+                                  : (event.isParticipating ? Colors.grey[200] : const Color(0xFF3F51B5)),
+                              foregroundColor: !canJoin
+                                  ? Colors.grey[600]
+                                  : (event.isParticipating ? Colors.red : Colors.white),
+                              elevation: event.isParticipating || !canJoin ? 0 : 2,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                            onPressed: canJoin
+                                ? () {
+                                    provider.toggleEventParticipation(event.id, userId, event.isParticipating);
+                                  }
+                                : null, // Deshabilita el botón por completo
+                            child: Text(
+                              !canJoin 
+                                  ? 'Círculo Lleno' 
+                                  : (event.isParticipating ? 'Salir del Círculo' : 'Unirme'),
+                              style: const TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                          );
                         },
-                        child: Text(
-                          event.isParticipating ? 'Salir del Círculo' : 'Unirme',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
                       ),
                     ],
                   )
@@ -300,7 +319,11 @@ class _ExploreScreenState extends State<ExploreScreen> {
     );
   }
 
-  // Se mantienen exactamente iguales las funciones privadas _showReportDialog y _showBlockConfirmation creadas anteriormente...
-  void _showReportDialog(BuildContext context, String eventId, String reporterId) { /* ... código anterior ... */ }
-  void _showBlockConfirmation(BuildContext context, String creatorId) { /* ... código anterior ... */ }
+  void _showReportDialog(BuildContext context, String eventId, String reporterId) {
+    // Tu código del diálogo de reporte se mantiene aquí...
+  }
+
+  void _showBlockConfirmation(BuildContext context, String creatorId) {
+    // Tu código del diálogo de bloqueo se mantiene aquí...
+  }
 }

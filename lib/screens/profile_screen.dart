@@ -18,8 +18,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final userId = context.read<AuthProvider>().user?.id ?? '';
-      context.read<AuthProvider>().loadUserProfile();
+      final authProvider = context.read<AuthProvider>();
+      final userId = authProvider.user?.id ?? '';
+      
+      // 🟢 SOLUCIÓN: Solo recarga desde la base de datos si el estado local no tiene información.
+      // Esto retiene la URL del avatar recién subido cuando cambias de pestaña.
+      if (authProvider.userProfile == null || authProvider.userProfile!.isEmpty) {
+        authProvider.loadUserProfile();
+      }
+      
       context.read<EventProvider>().loadEvents(userId);
     });
   }
@@ -36,6 +43,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final profile = authProvider.displayProfile;
     final username = profile['username'] ?? 'usuario';
     final bio = profile['bio'] ?? '¡Hola! Estoy usando Circle.';
+    final String? avatarUrl = profile['avatar_url'];
 
     final misInscripciones = eventProvider.events.where((e) => e.isParticipating && e.creatorId != userId).toList();
     final misPublicaciones = eventProvider.events.where((e) => e.creatorId == userId).toList();
@@ -55,16 +63,93 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
         body: Column(
           children: [
-            // Encabezado del Perfil con Botón de Edición Integrado
+            // Encabezado del Perfil con Botón de Edición e Imagen Interactiva
             Padding(
               padding: const EdgeInsets.all(20.0),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  CircleAvatar(
-                    radius: 36,
-                    backgroundColor: const Color(0xFF3F51B5).withValues(alpha: 0.1),
-                    child: const Icon(Icons.person, size: 40, color: Color(0xFF3F51B5)),
+                  // 🟢 AVATAR INTERACTIVO CON CARGA A SUPABASE STORAGE
+                  Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Container(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: const Color(0xFF3F51B5),
+                            width: 2.5,
+                          ),
+                        ),
+                        child: CircleAvatar(
+                          radius: 36,
+                          backgroundColor: const Color(0xFF3F51B5).withValues(alpha: 0.1),
+                          child: authProvider.isUploadingAvatar
+                              ? const SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(strokeWidth: 2.5, color: Color(0xFF3F51B5)),
+                                )
+                              : avatarUrl != null && avatarUrl.isNotEmpty
+                                  ? ClipRRect(
+                                      borderRadius: BorderRadius.circular(36),
+                                      child: Image.network(
+                                        avatarUrl,
+                                        width: 72,
+                                        height: 72,
+                                        fit: BoxFit.cover,
+                                        loadingBuilder: (context, child, loadingProgress) {
+                                          if (loadingProgress == null) return child;
+                                          return const Center(
+                                            child: SizedBox(
+                                              width: 20,
+                                              height: 20,
+                                              child: CircularProgressIndicator(strokeWidth: 2),
+                                            ),
+                                          );
+                                        },
+                                        errorBuilder: (context, error, stackTrace) {
+                                          return const Icon(Icons.person, size: 40, color: Color(0xFF3F51B5));
+                                        },
+                                      ),
+                                    )
+                                  : const Icon(Icons.person, size: 40, color: Color(0xFF3F51B5)),
+                        ),
+                      ),
+                      // Botón pequeño de la cámara posicionado abajo a la derecha
+                      if (!authProvider.isUploadingAvatar)
+                        Positioned(
+                          bottom: 0,
+                          right: 0,
+                          child: GestureDetector(
+                            onTap: () async {
+                              try {
+                                final resultUrl = await context.read<AuthProvider>().uploadAndRefreshAvatar();
+                                if (resultUrl != null && resultUrl.startsWith('Error') && context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text(resultUrl), backgroundColor: Colors.red),
+                                  );
+                                } else if (resultUrl != null && context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('¡Foto de perfil actualizada con éxito!'), backgroundColor: Colors.green),
+                                  );
+                                }
+                              } catch (e) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('Error al subir imagen: $e'), backgroundColor: Colors.red),
+                                  );
+                                }
+                              }
+                            },
+                            child: const CircleAvatar(
+                              radius: 12,
+                              backgroundColor: Color(0xFF3F51B5),
+                              child: Icon(Icons.camera_alt, size: 12, color: Colors.white),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                   const SizedBox(width: 16),
                   Expanded(
@@ -212,7 +297,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         final isSuccess = result == 'success' || result == true || result.toString() == 'true';
 
                         if (isSuccess) {
-                          // 🟢 FORZAMOS LA RECARGA: Guardamos los nuevos datos en el estado global inmediatamente
+                          // FORZAMOS LA RECARGA: Guardamos los nuevos datos en el estado global inmediatamente
                           await authProvider.loadUserProfile();
                         }
 

@@ -3,14 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:circle_app/models/event_model.dart';
 import 'package:circle_app/repositories/event_repository.dart';
 import 'package:circle_app/models/comment_model.dart';
-import 'package:circle_app/models/user_model.dart'; // 💡 AGREGA ESTA LÍNEA
+import 'package:circle_app/models/user_model.dart';
 
 class EventProvider extends ChangeNotifier {
   final EventRepository _eventRepository = EventRepository();
 
   List<EventModel> _events = [];
   List<Map<String, dynamic>> _interests = [];
-  List<CommentModel> _comments = []; // NUEVO
+  List<CommentModel> _comments = [];
   List<CommentModel> get comments => _comments;
   bool _isLoading = false;
   String? _errorMessage;
@@ -26,20 +26,23 @@ class EventProvider extends ChangeNotifier {
   bool _isLoadingParticipants = false;
   bool get isLoadingParticipants => _isLoadingParticipants;
 
-  Future<void> loadEventParticipants(String eventId) async {
-  _isLoadingParticipants = true;
-  notifyListeners();
-  try {
-    _currentParticipants = await _eventRepository.getParticipants(eventId);
-  } catch (e) {
-    print('Error al cargar participantes en el provider: $e');
-  } finally {
-    _isLoadingParticipants = false;
-    notifyListeners();
-  }
-}
+  // 🟢 NUEVO: Estado de carga específico para la acción del botón de inscripción
+  bool _isActionLoading = false;
+  bool get isActionLoading => _isActionLoading;
 
-  // MODIFICADO: Ahora solicita el ID de usuario para personalizar el resultado
+  Future<void> loadEventParticipants(String eventId) async {
+    _isLoadingParticipants = true;
+    notifyListeners();
+    try {
+      _currentParticipants = await _eventRepository.getParticipants(eventId);
+    } catch (e) {
+      print('Error al cargar participantes en el provider: $e');
+    } finally {
+      _isLoadingParticipants = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> loadEvents(String currentUserId) async {
     _isLoading = true;
     _errorMessage = null;
@@ -64,7 +67,6 @@ class EventProvider extends ChangeNotifier {
     }
   }
 
-  // MODIFICADO: Enviamos el ID del creador al recargar la lista
   Future<String?> createEvent(Map<String, dynamic> eventData) async {
     _isLoading = true;
     notifyListeners();
@@ -80,29 +82,35 @@ class EventProvider extends ChangeNotifier {
     }
   }
 
-  // NUEVO: Procesa la inscripción/cancelación y refresca el estado visual al instante
+  // 🟢 OPTIMIZADO: Ahora maneja estados de carga locales y refresca los participantes del círculo al instante
   Future<void> toggleEventParticipation(String eventId, String userId, bool isCurrentlyParticipating) async {
+    _isActionLoading = true;
+    notifyListeners();
     try {
-      // Si ya participa, la acción es salir (isJoining = false). Si no participa, es unirse (isJoining = true).
+      // Si ya participa, pasa false (salir). Si no participa, pasa true (unirse).
       await _eventRepository.toggleParticipation(eventId, userId, !isCurrentlyParticipating);
-      // Recargamos el listado local para que se actualicen los contadores y colores
-      await loadEvents(userId);
+      
+      // Sincronizamos en paralelo el estado global de eventos y los avatares del círculo actual
+      await Future.wait([
+        loadEvents(userId),
+        loadEventParticipants(eventId),
+      ]);
     } catch (e) {
       debugPrint('Error al cambiar participación: $e');
+    } finally {
+      _isActionLoading = false;
+      notifyListeners();
     }
   }
-Future<String?> reportEvent(String eventId, String reporterId, String reason) async {
+
+  Future<String?> reportEvent(String eventId, String reporterId, String reason) async {
     _isLoading = true;
     notifyListeners();
     try {
-      // Mensaje de depuración para la consola de VS Code
       print('🚀 Enviando reporte - EventID: $eventId, ReporterID: $reporterId, Razón: $reason');
-      
-      // Enviamos los parámetros al repositorio
       await _eventRepository.sendReport(eventId, reporterId, reason);
-      
       print('✅ Reporte enviado con éxito a la base de datos.');
-      return null; // Éxito
+      return null;
     } catch (e) {
       print('❌ Error atrapado en EventProvider.reportEvent: $e');
       return e.toString();
@@ -113,7 +121,7 @@ Future<String?> reportEvent(String eventId, String reporterId, String reason) as
   }
 
   Future<void> loadComments(String eventId) async {
-    _comments = []; // Limpieza rápida para evitar parpadeos de eventos anteriores
+    _comments = [];
     notifyListeners();
     try {
       _comments = await _eventRepository.getComments(eventId);
@@ -127,7 +135,7 @@ Future<String?> reportEvent(String eventId, String reporterId, String reason) as
   Future<void> addComment(String eventId, String userId, String message) async {
     try {
       await _eventRepository.saveComment(eventId, userId, message);
-      await loadComments(eventId); // Refresco inmediato
+      await loadComments(eventId);
     } catch (e) {
       debugPrint('Error al comentar: $e');
     }

@@ -7,8 +7,9 @@ class EventModel {
   final String interestName;
   final DateTime dateTime;
   final String location;
-  final int participantCount; // NUEVO
-  final bool isParticipating; // NUEVO
+  final int participantCount; 
+  final bool isParticipating; 
+  final int maxParticipants; // 🟢 NUEVO CAMPO
 
   EventModel({
     required this.id,
@@ -20,12 +21,11 @@ class EventModel {
     required this.location,
     required this.participantCount,
     required this.isParticipating,
+    required this.maxParticipants, // 🟢 AGREGAR AL CONSTRUCTOR
   });
 
   factory EventModel.fromJson(Map<String, dynamic> json, String currentUserId) {
     final interestData = json['interests'] as Map<String, dynamic>?;
-    
-    // NUEVO: Extraemos la lista de participantes mapeada por el Join
     final participantsList = json['event_participants'] as List<dynamic>? ?? [];
     
     return EventModel(
@@ -36,8 +36,10 @@ class EventModel {
       interestName: interestData?['name'] ?? 'General',
       dateTime: DateTime.parse(json['date_time'] ?? DateTime.now().toIso8601String()),
       location: json['location'] ?? 'Ubicación no especificada',
-      participantCount: participantsList.length, // Total de filas encontradas
-      isParticipating: participantsList.any((p) => p['user_id'] == currentUserId), // ¿Estoy ahí?
+      participantCount: participantsList.length, 
+      isParticipating: participantsList.any((p) => p['user_id'] == currentUserId),
+      // 🟢 MAPEAMOS EL VALOR REAL DE LA BASE DE DATOS (Por defecto 10 si viene nulo)
+      maxParticipants: json['max_participants'] ?? 10, 
     );
   }
 }

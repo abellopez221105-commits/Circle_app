@@ -8,11 +8,11 @@ class EventRepository {
   final EventService _eventService = EventService();
 
   // MODIFICADO: Ahora requiere el currentUserId para mapear correctamente el estado
+ // Permanece limpio y óptimo
   Future<List<EventModel>> getEvents(String currentUserId) async {
-    final data = await _eventService.fetchEvents();
+    final data = await _eventService.fetchEvents(); // Ya viene filtrado desde Supabase
     return data.map((json) => EventModel.fromJson(json, currentUserId)).toList();
   }
-
   Future<List<Map<String, dynamic>>> getInterests() async {
     final data = await _eventService.fetchInterests();
     return List<Map<String, dynamic>>.from(data);

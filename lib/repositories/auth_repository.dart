@@ -22,7 +22,7 @@ class AuthRepository {
   // 🟢 Cambiado 'profiles' por 'users'
   final response = await Supabase.instance.client
       .from('users') 
-      .select('id, username, bio')
+      .select('id, username, bio, avatar_url')
       .eq('id', userId)
       .maybeSingle();
   return response;

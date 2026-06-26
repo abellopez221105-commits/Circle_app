@@ -2,9 +2,16 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:circle_app/repositories/auth_repository.dart';
+import 'dart:io';
+import 'dart:typed_data';
+import 'package:image_picker/image_picker.dart';
+import 'package:image/image.dart' as img; // Motor de compresión
 
 class AuthProvider extends ChangeNotifier {
   final AuthRepository _authRepository = AuthRepository();
+
+  bool _isUploadingAvatar = false;
+  bool get isUploadingAvatar => _isUploadingAvatar;
   
   User? _user;
   Map<String, dynamic>? _userProfile; // Guardará localmente los datos de la tabla 'users'
@@ -50,6 +57,87 @@ class AuthProvider extends ChangeNotifier {
     } finally {
       _isLoading = false;
       notifyListeners();
+    }
+  }
+
+  /// 🟢 MÓDULO 4: Selecciona, comprime e inyecta la foto en Storage y la tabla users
+  Future<String?> uploadAndRefreshAvatar() async {
+    final picker = ImagePicker();
+    
+    // 1. Abrir la galería para seleccionar la foto
+    final XFile? pickedFile = await picker.pickImage(
+      source: ImageSource.gallery,
+    );
+
+    if (pickedFile == null) return null; // El usuario canceló la acción
+
+    _isUploadingAvatar = true;
+    notifyListeners();
+
+    try {
+      final supabase = Supabase.instance.client;
+      final userId = user?.id;
+      if (userId == null) throw 'Usuario no autenticado';
+
+      // 2. Optimización local de la imagen (Redimensionar y Comprimir)
+      final File file = File(pickedFile.path);
+      final Uint8List imageBytes = await file.readAsBytes();
+      
+      img.Image? decodedImage = img.decodeImage(imageBytes);
+      if (decodedImage == null) throw 'No se pudo decodificar la imagen';
+
+      // Redimensionamos de forma proporcional a un lienzo máximo de 500 px
+      img.Image resizedImage = img.copyResize(
+        decodedImage, 
+        width: decodedImage.width > decodedImage.height ? 500 : null,
+        height: decodedImage.height >= decodedImage.width ? 500 : null,
+      );
+
+      // Codificamos a un binario JPG estricto con calidad al 80% (~50KB de peso)
+      final Uint8List optimizedBytes = Uint8List.fromList(img.encodeJpg(resizedImage, quality: 80));
+
+      // 3. Subir al Storage de Supabase
+      // Usamos el userId como nombre directo para forzar el reemplazo automático en el bucket
+      final String fileName = userId; 
+      
+      await supabase.storage.from('avatars').uploadBinary(
+        fileName,
+        optimizedBytes,
+        fileOptions: const FileOptions(
+          upsert: true, // Habilita sobreescritura automática por RLS
+          contentType: 'image/jpeg',
+        ),
+      );
+
+      // 4. Obtener la URL pública oficial y romper la caché del renderizador
+      final String publicUrl = supabase.storage.from('avatars').getPublicUrl(fileName);
+      final String finalUrl = '$publicUrl?t=${DateTime.now().millisecondsSinceEpoch}';
+
+      // 5. Actualizar la tabla relacional public.users
+      await supabase
+          .from('users')
+          .update({'avatar_url': finalUrl})
+          .eq('id', userId);
+
+      // 6. Actualizar el estado local en vivo para evitar parpadeos o retrasos en la UI
+      if (_userProfile != null) {
+        _userProfile!['avatar_url'] = finalUrl;
+      } else {
+        _userProfile = {
+          'id': userId,
+          'avatar_url': finalUrl,
+        };
+      }
+
+      _isUploadingAvatar = false;
+      notifyListeners();
+      return finalUrl;
+
+    } catch (e) {
+      _isUploadingAvatar = false;
+      notifyListeners();
+      debugPrint('Error en uploadAndRefreshAvatar: $e');
+      rethrow;
     }
   }
 
@@ -108,12 +196,17 @@ class AuthProvider extends ChangeNotifier {
         'bio': bio.trim(),
       });
 
-      // 2. Actualizamos el estado local INMEDIATAMENTE
-      _userProfile = {
-        'id': user!.id,
-        'username': username.trim(),
-        'bio': bio.trim(),
-      };
+      // 2. Actualizamos el estado local INMEDIATAMENTE manteniendo el avatar_url previo
+      if (_userProfile != null) {
+        _userProfile!['username'] = username.trim();
+        _userProfile!['bio'] = bio.trim();
+      } else {
+        _userProfile = {
+          'id': user!.id,
+          'username': username.trim(),
+          'bio': bio.trim(),
+        };
+      }
 
       _isLoading = false;
       notifyListeners(); 

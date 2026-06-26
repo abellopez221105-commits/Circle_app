@@ -5,13 +5,22 @@ class EventService {
   final SupabaseClient _supabase = Supabase.instance.client;
 
   // MODIFICADO: Agregamos event_participants(user_id) al select
-  Future<List<dynamic>> fetchEvents() async {
+  Future<List<Map<String, dynamic>>> fetchEvents() async {
+  try {
+    // 🟢 Obtenemos el tiempo exacto actual del dispositivo con su respectivo huso horario (ej: UTC-5)
+    final nowIso = DateTime.now().toIso8601String(); 
+
     final response = await _supabase
         .from('events')
-        .select('*, interests(name), event_participants(user_id)')
-        .order('date_time', ascending: true);
-    return response as List<dynamic>;
+        .select('*, interests(*), event_participants(*)')
+        .gte('date_time', nowIso) // 🟢 FILTRO: Solo trae eventos cuya fecha sea Mayor o Igual (Greater Than or Equal) a la actual
+        .order('date_time', ascending: true); // Ordena de más cercanos a más lejanos
+
+    return List<Map<String, dynamic>>.from(response);
+  } catch (e) {
+    throw Exception('Error al traer eventos desde el servicio: $e');
   }
+}
 
   Future<List<dynamic>> fetchInterests() async {
     return await _supabase.from('interests').select('id, name').order('name', ascending: true);

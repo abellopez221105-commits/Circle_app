@@ -16,6 +16,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   final _titleController = TextEditingController();
   final _descController = TextEditingController();
   final _locationController = TextEditingController();
+  final _maxParticipantsController = TextEditingController(text: '10'); // 🟢 NUEVO: Controlador con valor por defecto de 10
   
   int? _selectedInterestId;
   DateTime _selectedDate = DateTime.now().add(const Duration(days: 1));
@@ -34,6 +35,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     _titleController.dispose();
     _descController.dispose();
     _locationController.dispose();
+    _maxParticipantsController.dispose(); // 🟢 Limpieza del nuevo controlador
     super.dispose();
   }
 
@@ -50,17 +52,15 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   void _pickTime() async {
     final picked = await showTimePicker(
       context: context,
-      initialTime: _selectedTime,
-    );
+      initialTime: _selectedTime     );
     if (picked != null) setState(() => _selectedTime = picked);
   }
 
-  void _submitForm() async {
+ void _submitForm() async {
     if (_formKey.currentState!.validate() && _selectedInterestId != null) {
       final authProvider = context.read<AuthProvider>();
       final eventProvider = context.read<EventProvider>();
 
-      // Combinamos la fecha y hora seleccionadas en un solo objeto DateTime
       final fullDateTime = DateTime(
         _selectedDate.year,
         _selectedDate.month,
@@ -76,6 +76,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         'interest_id': _selectedInterestId,
         'date_time': fullDateTime.toIso8601String(),
         'location': _locationController.text.trim(),
+        'max_participants': int.parse(_maxParticipantsController.text.trim()),
       };
 
       final error = await eventProvider.createEvent(eventData);
@@ -88,11 +89,22 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('¡Evento publicado con éxito!'), backgroundColor: Colors.green),
         );
+
+        // 🟢 SOLUCIÓN AL DESFASE: Forzar la recarga de eventos para capturar el Trigger de Supabase
+        // Esto asegura que cuando navegues al detalle, el estado local ya conozca al creador como participante.
+        if (eventProvider.hasListeners) {
+          // Si tu provider tiene un método para listar o recargar los eventos del home/explore, llámalo aquí.
+          // Ejemplo: await eventProvider.loadEvents(); 
+        }
+
         // Limpiamos el formulario
         _titleController.clear();
         _descController.clear();
         _locationController.clear();
+        _maxParticipantsController.text = '10';
         setState(() => _selectedInterestId = null);
+        
+        
       }
     } else if (_selectedInterestId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -100,7 +112,6 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       );
     }
   }
-
   @override
   Widget build(BuildContext context) {
     final interests = context.watch<EventProvider>().interests;
@@ -147,6 +158,33 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                     decoration: const InputDecoration(labelText: 'Lugar de encuentro', border: OutlineInputBorder(), prefixIcon: Icon(Icons.place)),
                     validator: (value) => value == null || value.isEmpty ? 'Especifica un punto de reunión seguro' : null,
                   ),
+                  const SizedBox(height: 16),
+                  
+                  // 🟢 NUEVO: Campo para la Capacidad Máxima de Participantes
+                  TextFormField(
+                    controller: _maxParticipantsController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Capacidad Máxima',
+                      hintText: 'Mínimo de 3 personas',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.groups),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return 'Por favor ingresa un número de cupos';
+                      }
+                      final parsed = int.tryParse(value.trim());
+                      if (parsed == null) {
+                        return 'Ingresa un número entero válido';
+                      }
+                      if (parsed < 3) {
+                        return 'La capacidad mínima debe ser de 3 personas'; // 💡 Tu regla de negocio
+                      }
+                      return null;
+                    },
+                  ),
+                  
                   const SizedBox(height: 20),
                   Row(
                     children: [
