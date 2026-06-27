@@ -5,6 +5,7 @@ import 'package:circle_app/providers/auth_provider.dart';
 import 'package:circle_app/providers/event_provider.dart';
 import 'package:circle_app/models/event_model.dart';
 import 'package:circle_app/screens/event_details_screen.dart';
+import 'package:circle_app/screens/premium_checkout_screen.dart'; 
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -21,8 +22,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final authProvider = context.read<AuthProvider>();
       final userId = authProvider.user?.id ?? '';
       
-      // 🟢 SOLUCIÓN: Solo recarga desde la base de datos si el estado local no tiene información.
-      // Esto retiene la URL del avatar recién subido cuando cambias de pestaña.
       if (authProvider.userProfile == null || authProvider.userProfile!.isEmpty) {
         authProvider.loadUserProfile();
       }
@@ -39,11 +38,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final userId = authProvider.user?.id ?? '';
     final email = authProvider.user?.email ?? 'Sin correo';
     
-    // 🟢 Obtenemos el perfil dinámico inteligente (evita datos estáticos fijos)
+    // Obtenemos el perfil dinámico inteligente
     final profile = authProvider.displayProfile;
     final username = profile['username'] ?? 'usuario';
     final bio = profile['bio'] ?? '¡Hola! Estoy usando Circle.';
     final String? avatarUrl = profile['avatar_url'];
+
+    // Lectura del estado Premium en vivo
+    final isPremium = profile['is_premium'] == true;
+    final premiumUntilStr = profile['premium_until'];
+
+    String formattedDate = '';
+    if (premiumUntilStr != null) {
+      try {
+        final expiryDate = DateTime.parse(premiumUntilStr.toString());
+        formattedDate = "${expiryDate.day}/${expiryDate.month}/${expiryDate.year}";
+      } catch (_) {
+        formattedDate = premiumUntilStr.toString();
+      }
+    }
 
     final misInscripciones = eventProvider.events.where((e) => e.isParticipating && e.creatorId != userId).toList();
     final misPublicaciones = eventProvider.events.where((e) => e.creatorId == userId).toList();
@@ -63,13 +76,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
         body: Column(
           children: [
-            // Encabezado del Perfil con Botón de Edición e Imagen Interactiva
             Padding(
               padding: const EdgeInsets.all(20.0),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 🟢 AVATAR INTERACTIVO CON CARGA A SUPABASE STORAGE
                   Stack(
                     alignment: Alignment.center,
                     children: [
@@ -116,7 +127,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   : const Icon(Icons.person, size: 40, color: Color(0xFF3F51B5)),
                         ),
                       ),
-                      // Botón pequeño de la cámara posicionado abajo a la derecha
                       if (!authProvider.isUploadingAvatar)
                         Positioned(
                           bottom: 0,
@@ -189,6 +199,66 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
 
+            // SECCIÓN REFACTORIZADA: Actualización asíncrona garantizada al regresar
+            Padding(
+              padding: const EdgeInsets.only(left: 20.0, right: 20.0, bottom: 16.0),
+              child: isPremium
+                  ? Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.amber.withValues(alpha: 0.5), width: 1.5),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.stars_rounded, color: Colors.amber, size: 22),
+                          const SizedBox(width: 10),
+                          Text(
+                            'Premium Activo (Vence: $formattedDate)',
+                            style: const TextStyle(
+                              color: Color(0xFFB78103),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF3F51B5),
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size(double.infinity, 48),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        elevation: 1,
+                      ),
+                      icon: const Icon(Icons.workspace_premium_rounded, color: Colors.amber, size: 20),
+                      label: const Text(
+                        'Actualizar a Premium ✨',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                      onPressed: () async {
+  // Esperamos a que la pantalla de pago se cierre
+                      // 1. Esperamos a que la pantalla de pago se cierre
+                        final result = await Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => const PremiumCheckoutScreen()),
+                        );
+
+                        // 2. Si regresó a la pantalla, esperamos 400ms para asegurar que la DB impactó
+                        if (context.mounted) {
+                          await Future.delayed(const Duration(milliseconds: 400));
+                          
+                          // 3. Forzamos la recarga total que ahora incluye 'refreshUser()'
+                          await context.read<AuthProvider>().loadUserProfile();
+                         }
+                      },
+                    ),
+            ),
+
             const TabBar(
               labelColor: Color(0xFF3F51B5),
               unselectedLabelColor: Colors.grey,
@@ -219,7 +289,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // Modal interactivo inferior para actualizar datos
   void _showEditProfileSheet(AuthProvider authProvider, String currentName, String currentBio) {
     final nameController = TextEditingController(text: currentName);
     final bioController = TextEditingController(text: currentBio);
@@ -285,7 +354,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     onPressed: () async {
                       if (formKey.currentState!.validate()) {
-                        Navigator.pop(sheetContext); // Cierra el BottomSheet
+                        Navigator.pop(sheetContext); 
                         
                         final result = await authProvider.updateProfile(
                           username: nameController.text,
@@ -297,7 +366,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         final isSuccess = result == 'success' || result == true || result.toString() == 'true';
 
                         if (isSuccess) {
-                          // FORZAMOS LA RECARGA: Guardamos los nuevos datos en el estado global inmediatamente
                           await authProvider.loadUserProfile();
                         }
 

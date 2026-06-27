@@ -39,6 +39,7 @@ dependencies:
   flutter_dotenv: ^6.0.1
   image_picker: ^1.2.2
   image: ^4.9.1
+  flutter_credit_card: ^4.1.0
 
 dev_dependencies:
   flutter_test:

@@ -12,6 +12,8 @@ class AuthProvider extends ChangeNotifier {
 
   bool _isUploadingAvatar = false;
   bool get isUploadingAvatar => _isUploadingAvatar;
+  bool _isProcessingPayment = false;
+  bool get isProcessingPayment => _isProcessingPayment;
   
   User? _user;
   Map<String, dynamic>? _userProfile; // Guardará localmente los datos de la tabla 'users'
@@ -20,15 +22,24 @@ class AuthProvider extends ChangeNotifier {
 
   Map<String, dynamic> get displayProfile {
     if (_userProfile != null && _userProfile!.isNotEmpty) {
-      return _userProfile!;
-    }
-    
-    // Si por alguna razón está vacío temporalmente, usa los metadatos de la sesión
-    final metadata = user?.userMetadata;
-    return {
-      'username': metadata?['username'] ?? metadata?['name'] ?? user?.email?.split('@')[0] ?? 'usuario',
-      'bio': '¡Hola! Estoy listo para unirme a un Circle.',
-    };
+    return _userProfile!;
+  }
+  
+  // Si por alguna razón está vacío temporalmente, usa los metadatos de la sesión
+  final metadata = user?.userMetadata;
+  
+  // 🟢 SOLUCIÓN: Intentamos recuperar el valor real de los metadatos antes de asumir que es false.
+  // Si en la sesión de Supabase 'is_premium' cambia a true, se mantendrá aquí de forma segura.
+  final sessionPremium = metadata?['is_premium'] == true || metadata?['is_premium'] == 'true';
+
+  return {
+    'username': metadata?['username'] ?? metadata?['name'] ?? user?.email?.split('@')[0] ?? 'usuario',
+    'bio': '¡Hola! Estoy listo para unirme a un Circle.',
+    'avatar_url': metadata?['avatar_url'], // Añadido por si acaso para evitar parpadeos de avatar
+    'is_premium': sessionPremium, 
+    'subscription_status': sessionPremium ? 'active' : 'inactive',
+    'premium_until': metadata?['premium_until'],
+  };
   }
   
   User? get user => _user ?? _authRepository.currentUser;
@@ -45,20 +56,24 @@ class AuthProvider extends ChangeNotifier {
   }
 
   // 🟢 CORRECCIÓN: Cambiado para cargar desde el repositorio que lee la tabla 'users'
-  Future<void> loadUserProfile() async {
-    if (user == null) return;
-    _isLoading = true;
+  // 🟢 CORRECCIÓN: Cambiado para cargar desde el repositorio que lee la tabla 'users'
+Future<void> loadUserProfile() async {
+  if (user == null) return;
+  _isLoading = true;
+  notifyListeners();
+  try {
+    // 🟢 USAR LA INSTANCIA GLOBAL DE SUPABASE PARA REFRESCAR LA SESIÓN
+    await Supabase.instance.client.auth.refreshSession(); 
+
+    _userProfile = await _authRepository.getUserProfile(user!.id);
+    _blockedUserIds = await _authRepository.getBlockedUserIds(user!.id);
+  } catch (e) {
+    debugPrint('Error al cargar perfil/bloqueos: $e');
+  } finally {
+    _isLoading = false;
     notifyListeners();
-    try {
-      _userProfile = await _authRepository.getUserProfile(user!.id);
-      _blockedUserIds = await _authRepository.getBlockedUserIds(user!.id);
-    } catch (e) {
-      debugPrint('Error al cargar perfil/bloqueos: $e');
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
   }
+}
 
   /// 🟢 MÓDULO 4: Selecciona, comprime e inyecta la foto en Storage y la tabla users
   Future<String?> uploadAndRefreshAvatar() async {
@@ -219,6 +234,69 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  Future<String> processSandboxPayment({
+    required String cardNumber,
+    required String expiryDate,
+    required String cvv,
+    required String cardHolder,
+  }) async {
+    // Limpiamos los espacios en blanco del número de tarjeta
+    final cleanCardNumber = cardNumber.replaceAll(' ', '');
+
+    if (user == null) return 'Usuario no autenticado';
+
+    _isProcessingPayment = true;
+    notifyListeners();
+
+    try {
+      // 1. Simulamos el retraso de red de un servidor de pagos real (2 segundos)
+      await Future.delayed(const Duration(seconds: 2));
+
+      // 2. Evaluamos los escenarios del "Sandbox" según el número de tarjeta
+      if (cleanCardNumber == '4000000000001234') {
+        throw 'Fondos insuficientes. Intenta con otra tarjeta de prueba.';
+      } else if (cleanCardNumber == '5105105105105105') {
+        throw 'Tarjeta expirada. Verifica la fecha de vencimiento.';
+      } else if (cleanCardNumber != '4242424242424242') {
+        throw 'Transacción rechazada por el banco simulado. Usa la tarjeta de éxito.';
+      }
+
+      // 3. ¡PAGO APROBADO! Calculamos 30 días de suscripción premium
+      final DateTime premiumExpiration = DateTime.now().add(const Duration(days: 30));
+      final supabase = Supabase.instance.client;
+
+      // 4. Actualizamos Supabase en la tabla pública 'users'
+      await supabase.from('users').update({
+        'is_premium': true,
+        'subscription_status': 'active',
+        'premium_until': premiumExpiration.toIso8601String(),
+      }).eq('id', user!.id);
+
+      // 5. Forzamos la actualización local estructurada para mutar inmediatamente la UI
+      if (_userProfile != null) {
+        _userProfile!['is_premium'] = true;
+        _userProfile!['subscription_status'] = 'active';
+        _userProfile!['premium_until'] = premiumExpiration.toIso8601String();
+      } else {
+        _userProfile = {
+          'id': user!.id,
+          'is_premium': true,
+          'subscription_status': 'active',
+          'premium_until': premiumExpiration.toIso8601String(),
+        };
+      }
+
+      _isProcessingPayment = false;
+      notifyListeners();
+      return 'success';
+
+    } catch (e) {
+      _isProcessingPayment = false;
+      notifyListeners();
+      return e.toString().replaceAll('Exception: ', '');
+    }
+  }
+
   Future<void> handleSignOut() async {
     await _authRepository.signOut();
     _user = null;
@@ -231,4 +309,7 @@ class AuthProvider extends ChangeNotifier {
     _isLoading = value;
     notifyListeners();
   }
+
+
+
 }
